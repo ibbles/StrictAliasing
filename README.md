@@ -239,12 +239,12 @@ void blocked_reorder(
 }
 ```
 
-What we would like the optimizer to do is to store `src_start` and `dst_start` 
-in registers while copying a block instead of reloading it from the array for 
-every float. Passing `-O3` produces quite a bit of code for this function, so 
-`-O3 is used instead. 
+What we would like the optimizer to do is to store `src_start`, `dst_start`, and
+the block size in registers while copying a block instead of reloading it from
+the array for every float. Passing `-O3` produces quite a bit of code for this
+function, so `-Os` is used instead.
 
-First the version without strict aliasin:
+First the version without strict aliasing, i.e., with `-fno-strict-aliasing`:
 
 Clang:
 ```c++
@@ -254,34 +254,123 @@ blocked_reorder(
     unsigned int* src_block_starts, // rdx
     unsigned int* dst_block_starts, // rcx
     unsigned int* block_sizes,      // r8
-    unsigned int num_blocks):       // r8
-  pushq %rbx
+    unsigned int num_blocks):       // r9
+  
+  pushq %rbx // Store callee-saved register we will be using.
+  
   testl %r9d, %r9d  // Exit immediately
   je .LBB8_6        // if num_blocks == 0.
-  movl %r9d, %r9d
-  xorl %r10d, %r10d
+  
+  movl %r9d, %r9d   // Not sure what this is. Sometimes we move a register to
+                    // itself to make sure the upper bits are set to zero, but
+                    // it can also be used as a sized NOP to align the instruction
+                    // stream for jump targets.
+
+  xorl %r10d, %r10d // Set r10 to 0. This is block_idx.
+
+  // This is the top of the block_idx loop.
 .LBB8_2: # =>This Loop Header: Depth=1
-  cmpl $0, (%r8,%r10,4)
-  je .LBB8_5
-  xorl %r11d, %r11d
+  cmpl $0, (%r8,%r10,4) // Check if block_sizes[block_idx] is zero.
+  je .LBB8_5            // Go to the next iteration if it is.
+
+  xorl %r11d, %r11d  // Set r11 to 0. This is elem_idx.
+
+  // This is the top of the elem_idx loop.
 .LBB8_4: # Parent Loop BB8_2 Depth=1
-  movl (%rdx,%r10,4), %eax
-  addl %r11d, %eax
-  movl (%rdi,%rax,4), %eax
-  movl (%rcx,%r10,4), %ebx
-  addl %r11d, %ebx
-  movl %eax, (%rsi,%rbx,4)
-  incl %r11d
-  cmpl (%r8,%r10,4), %r11d
-  jb .LBB8_4
+  
+  // Load and element from src.
+  movl (%rdx,%r10,4), %eax // Load src_block_start[block_idx] into eax.
+  addl %r11d, %eax         // Add elem_idx to eax.
+  movl (%rdi,%rax,4), %eax // Load src[elem_idx + src_start[block_idx]] into eax.
+
+  // Load an element from dst.
+  movl (%rcx,%r10,4), %ebx // Load dst_block_start[block_idx] into ebx.
+  addl %r11d, %ebx         // Add elem_idx to ebx.
+  movl %eax, (%rsi,%rbx,4) // store eax, the value read from src, to dst[elem_idx + dst_block_start[block_idx]].
+
+  // Inner loop postamble.
+  incl %r11d               // ++elem_idx.
+  cmpl (%r8,%r10,4), %r11d // elem_idx < block_sizes[block_idx].
+  jb .LBB8_4               // Jump back up if there are more elements in this block.
+
+  // Outer loop postamble.
 .LBB8_5: # in Loop: Header=BB8_2 Depth=1
-  incq %r10
-  cmpq %r9, %r10
-  jne .LBB8_2
+  incq %r10       // ++block_idx.
+  cmpq %r9, %r10  // block_idx < num_blocks.
+  jne .LBB8_2     // Jump back up if there are more blocks.
+
+  // Return.
 .LBB8_6:
   popq %rbx
   retq
 ```
+
+The element copying loop, the part that could have been a call to `memcpy` is 
+between the `LBB8_4` and `LBB8_5` jump labels. It contains five memory 
+references per copied float. 
+
+Now let's have a look at the version compiled with `-fstrict-aliasing`.
+
+```c++
+blocked_reorder(
+    float* src, rdi
+    float* dst, rsi
+    unsigned int* src_block_starts, rdx
+    unsigned int* dst_block_starts, rcx
+    unsigned int* block_sizes, r8
+    unsigned int num_blocks): r9
+
+  // Stack management. There are a lot more registers being used this time.
+  pushq %rbp
+  pushq %r15
+  pushq %r14
+  pushq %rbx
+
+  testl %r9d, %r9d // Return immediately if there
+  je .LBB9_6       // are no blocks.
+  
+  movl %r9d, %r9d    // Zero extend or align instruction stream.
+  
+  xorl %r10d, %r10d // block_idx = 0.
+
+  // This is the top of the block_idx loop.
+.LBB9_2: # =>This Loop Header: Depth=1
+  movl (%r8,%r10,4), %r11d  // Load block_size[block_idx].
+  testq %r11, %r11          // Skip this iteration is the block is empty.
+  je .LBB9_5
+
+  movl (%rcx,%r10,4), %r14d // Load dst_block_starts[block_idx]. Let's call it dst_start.
+  movl (%rdx,%r10,4), %r15d // Load src_block_starts[block_idx]. Let's call it src_start.
+  xorl %eax, %eax           // elem_idx = 0.
+
+  // This is the top of the elem_idx loop.
+.LBB9_4: # Parent Loop BB9_2 Depth=1
+  leal (%r15,%rax), %ebx   // Compute src_start + elem_idx.
+  movl (%rdi,%rbx,4), %ebp // Load src[src_start + elem_idx].
+  leal (%r14,%rax), %ebx   // Compute dst_start + elem_idx.
+  movl %ebp, (%rsi,%rbx,4) // Store loaded value to dst[dst_start + elem_idx].
+  
+  // Inner loop postamble.
+  incq %rax       // ++elem_idx.
+  cmpq %r11, %rax // elem_idx < block_size[block_idx].
+  jb .LBB9_4      // Jump back up if there are more more elements in this block.
+
+  // Outer loop postamble.
+.LBB9_5: # in Loop: Header=BB9_2 Depth=1
+  incq %r10      // ++block_idx.
+  cmpq %r9, %r10 // block_idx < num_blocks.
+  jne .LBB9_2    // Jump back up if more blocks.
+
+  // Return
+.LBB9_6:
+  popq %rbx
+  popq %r14
+  popq %r15
+  popq %rbp
+  retq
+```
+
+In this case the inner loop contains only two memory references per iteration.
 
 
 ## Resources
