@@ -12,7 +12,7 @@ aliasing rule.
 
 The rules for C and C++ are different and I will be focusing on C++.
 
-Asembly output shown in this text has been generated on Matt Godbolt's [Compiler
+Assembly output shown in this text has been generated on Matt Godbolt's [Compiler
 Explorer](https://godbolt.org) using Clang 5.0 and GCC 7.2 targeting x86_64,
 compiled with `-O3 -std=c++14 -fstrict-aliasing -Wstrict-aliasing` unless
 otherwise specified.
@@ -32,17 +32,24 @@ And then follows a list of cases that will be detailed in this text. The "stored
 value" part will become important later.
 
 
-## Asembly primer
+## Assembly primer
 
-This text uses AT&T syntax. Integer and pointer arguments are passed in `%rdi`,
-`%rsi`, `%rdx`, `%rcx`, `%r8`, and `%r9`. Floating point arguments are passed in
-`%xmm0` to `%xmm7`. The special register `%rsp` is the stack pointer. The
-current stack frame's data is stored in addresses lower than where `%rsp`
-points. Memory is addressed using `(<base>,<index>,<step_size>)` where `<base>`
-marks the start of an array, `<index>` is the index into the array to access,
-and `<step_size>` is the size in bytes of the array elements. For example,
-`(%rdi,%rsi,4)` accesses the `%rsi`th element with 4-byte elements in an array
-starting at `%rdi`. Example code that could produce this memory access is
+This text uses AT&T syntax. Registers are prefixed with `%`. Registers staring
+with `%r` are 64 bit registers and registers starting with `%e` are 32 bit
+registers. The lower 32 bits of an `%r` register IS the corresponding `%e`
+register. A register with neither `r` nor `e` is a 16 bit or 8 bit register.
+
+Integer and pointer arguments are passed in `%rdi`, `%rsi`, `%rdx`, `%rcx`,
+`%r8`, and `%r9`. Floating point arguments are passed in `%xmm0` to `%xmm7`.
+Return values from functions are stored in `%rax`. The special register `%rsp`
+is the stack pointer. The current stack frame's data is stored in addresses
+lower than where `%rsp` points.
+
+Memory is addressed using `(<base>,<index>,<step_size>)` where `<base>` marks
+the start of an array, `<index>` is the index in the array to access, and
+`<step_size>` is the size in bytes of the array elements. For example,
+`(%rdi,%rsi,4)` accesses the `%rsi`th 4-byte element in an array starting at
+`%rdi`. Example code that could produce this memory access is
 
 ```c++
 float array_lookup(float* data, uint64_t index) {
@@ -64,7 +71,7 @@ struct Data {
 ```
 
 from a member function the compiler would insert a load of `4(%rdi)`. Remember
-that `%rdi` holds the first argument passed to a function. Clang passes the
+that `%rdi` holds the first argument passed to a function. The compiler passes the
 `this` pointer as a hidden first argument. `4(%rdi)` hence loads whatever can be
 found 4 bytes into the structure, which skips past the width of one `uint32_t`.
 
@@ -106,7 +113,7 @@ the end we return the supposedly modified `uint32_t` value. Since no write
 happens to or through something that is an `uint32_t`, the compiler is allowed
 to return `arg` unmodified.
 
-Neigher Clang nor GCC does, however:
+Neither Clang nor GCC does, however:
 
 Clang:
 ```c++
@@ -143,7 +150,7 @@ back into `%eax` for the return.
 ### Extract exponent
 
 This piece of code extracts the exponent bits from a 32-bit floating point
-number. It does it by shifting the exponent bits down to the bottom and then
+number. It does so by shifting the exponent bits down to the bottom and then
 masking away the sign bit.
 
 ```c++
@@ -186,7 +193,7 @@ zero there aligns up with the sign bit at bit 9 of `%eax`.
 
 ### Read, write, read
 
-This is an example where Clang and GCC produces code that will produce different
+This is an example where Clang and GCC generates code that will produce different
 results.
 
 ```c++
@@ -213,7 +220,7 @@ read_write_read(unsigned int*, float*):
   ret
 ```
 
-Where Clang first writes to the `float*` and the reads from the `uint32_t*`, GCC
+Where Clang first writes to the `float*` and then reads from the `uint32_t*`, GCC
 does it in the opposite order. If both pointers point to the same memory then
 Clang will return 1065353216, the integer value of the bit pattern for 1.0f, and
 GCC will return whatever integer was at that memory location originally.
@@ -226,12 +233,16 @@ This example demonstrates the benefit of enforcing the strict aliasing rule.
 ```c++
 class Vector
 {
+private:
     float* data;
     uint64_t size;
-    void set(float value){
-    for (uint64_t i = 0; i < this->size; ++i)
+public:
+    void set(float value)
     {
-        data[i] = value;
+      for (uint64_t i = 0; i < this->size; ++i)
+      {
+          data[i] = value;
+      }
     }
 };
 ```
@@ -273,13 +284,14 @@ Vector::set(float): # @Vector::set(float)
   retq
 ```
 
-Notice that nothing is cached in registers. Every time we need the `float*` or
-the number of elements we load from memory via `%rdi`, the `this` pointer. This
-is because the compiler must assume that `movss %xmm0, (%rcx,%rax,4)`, the
-assignment to `data[i]`, may write to any memory. Including the `Vector`
-instance itself. If the C++ code is allowed to make any pointer point to any
-available memory regardless of their respective types then we could do something
-like the following.
+Notice that the sequence of instructions is very similar to the previous
+listing, but here nothing is cached in registers. Every time we need the
+`float*` or the number of elements we load from memory via `%rdi`, the `this`
+pointer. This is because the compiler must assume that `movss %xmm0,
+(%rcx,%rax,4)`, the assignment to `data[i]`, may write to any writable part of
+memory. Including the `Vector` instance itself. If the C++ code is allowed to
+make any pointer point to any available memory regardless of their respective
+types then we could do something like the following.
 
 ```c++
 Vector v;
@@ -288,24 +300,27 @@ v.data = (float*)(&v - 2);
 v.set(fabricated_float);
 ```
 
-If an outsider has control over `fabricated_float` then the outsider can cause
-`Vector::set` to write those four bytes to anywhere in memory since the outsider
-will have control over what `v.data` will point to after it has been
-overwritten. Arbitrary code execution is left as an exercise to the reader. In
-short, please don't subvert the type system. It's there for a reason.
+If an outsider has control over `fabricated_float` then the outsider can cause 
+`Vector::set` to write those four bytes to anywhere in memory since the outsider 
+will have control over what `v.data` will point to after it has been 
+overwritten. This is a security hole just waiting for someone to come and poke 
+at it. 
+
+In short, the type system is there for a reason. Please don't subvert it by 
+casting one type of pointer into another. 
 
 But wait, there's more. The `-fstrict-aliasing` version shown first was just a
 snippet. If the compiler can know that the write done by one iteration will have
 no influence on preceeding or succeeding iterations it can do all kinds of
 trickery to make the loop go faster for large arrays. For example unroll the
 loop and use SSE instructions to set 64 floats per iteration, as shown below.
-128 floats if you have an AVX capable compiler and CPU.
+Or 128 floats if you have an AVX capable compiler and CPU.
 
-In the below there is talk about aligned floats. In this case I do not mean that
-the floats' addresses in memory are aligned, but that _the number of floats_ is
-aligned to some SIMD efficient value. That is, the number of floats not counting
-any stragglers that will need to be handled in a clean-up loop after the main
-SIMD loop is done.
+In the below there is talk about aligned floats. In this case I do not mean that 
+the floats' addresses in memory are aligned, but that _the number of floats_ is 
+aligned to some number suitable for efficient SIMD execution. That is, the 
+number of floats not counting any stragglers that will need to be handled in a 
+clean-up loop after the main SIMD loop is done. 
 
 With `-fstrict-aliasing`:
 ```c++
@@ -315,9 +330,9 @@ Vector::set(float): # @Vector::set(float)
   je .LBB6_12        // Early out if empty.
   movq (%rdi), %rcx  // Load float*.
   cmpq $7, %r8       // Check if we have more than 7 floats.
-  ja .LBB6_3         // If so, jump to 3.
+  ja .LBB6_3         // If so, jump to unrolled loop selection.
   xorl %edx, %edx    // i = 0.
-  jmp .LBB6_11       // Jump to short-array version.
+  jmp .LBB6_11       // Jump to short-array version. The one shown previously.
 .LBB6_3:
   movq %r8, %rdx       // Copy size to %rdx.
   andq $-8, %rdx       // Align size down to multiple of 8.
@@ -328,16 +343,16 @@ Vector::set(float): # @Vector::set(float)
   shrq $3, %rdi        // Divide aligned_size by 8...
   leal 1(%rdi), %esi   // ...and add 1...
   andl $7, %esi        // ...and align down to multiple of 8 again. Not sure what all this produces.
-  cmpq $56, %rax       // Do we have 56 aligned elements?
-  jae .LBB6_5          //   If so, jump to 5.
+  cmpq $56, %rax       // Do we have 56 or more aligned elements?
+  jae .LBB6_5          //   If so, jump to more unrolled loop.
   xorl %edi, %edi      // If not:
   testq %rsi, %rsi     //    Do we have any aligned elements at all?
   jne .LBB6_8          //      If so, jump to less unrolled loop.
   jmp .LBB6_10         //      If not, jump to scalar copy loop.
 .LBB6_5:
   leaq -1(%rsi), %rax  // Here is where we get if we had 56 or more aligned floats.
-  subq %rdi, %rax      // Set up a few loop counters.
-  xorl %edi, %edi      // To be honest I'm not entirely sure what's going on here.
+  subq %rdi, %rax      // Set up a few loop counters. To be honest I'm 
+  xorl %edi, %edi      // not entirely sure what's going on here.
 .LBB6_6: # =>This Inner Loop Header: Depth=1
   movups %xmm1, (%rcx,%rdi,4)     // A whole bunch of SSE writes to memory.
   movups %xmm1, 16(%rcx,%rdi,4)
@@ -361,13 +376,13 @@ Vector::set(float): # @Vector::set(float)
   testq %rsi, %rsi  // That is what's tested here, right?
   je .LBB6_10   // Done with massively parallel part, jump to clean-up loop.
 .LBB6_8: // Here is where we get if we had less than 56 aligned floats.
-  leaq 16(%rcx,%rdi,4), %rax
-  negq %rsi
+  leaq 16(%rcx,%rdi,4), %rax // Don't know what
+  negq %rsi                  // these two does.
 .LBB6_9: # =>This Inner Loop Header: Depth=1 // Loop with fewer unrolled iterations.
-  movups %xmm1, -16(%rax)
-  movups %xmm1, (%rax)
-  addq $32, %rax
-  incq %rsi
+  movups %xmm1, -16(%rax) // Loop that
+  movups %xmm1, (%rax)    // writes 8
+  addq $32, %rax          // elements per
+  incq %rsi               // iteration.
   jne .LBB6_9
 .LBB6_10:         // Here is where we get if we have no aligned floats.
   cmpq %rdx, %r8
@@ -500,7 +515,7 @@ blocked_reorder(
   retq
 ```
 
-The element copying loop, the part that could have been a call to `memcpy` is
+The element copying loop, the part that could have been a call to `memcpy`, is
 between the `LBB8_4` and `LBB8_5` jump labels. It contains five memory
 references per copied float.
 
