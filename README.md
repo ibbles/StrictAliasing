@@ -582,6 +582,9 @@ blocked_reorder(
 
 In this case the inner loop contains only two memory references per iteration.
 
+![Performance graph](blocked_reorder.svg "Blocked reorder performance graph")
+
+
 
 ## Resources
 
