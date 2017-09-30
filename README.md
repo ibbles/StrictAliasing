@@ -300,14 +300,14 @@ v.data = (float*)(&v - 2);
 v.set(fabricated_float);
 ```
 
-If an outsider has control over `fabricated_float` then the outsider can cause 
-`Vector::set` to write those four bytes to anywhere in memory since the outsider 
-will have control over what `v.data` will point to after it has been 
-overwritten. This is a security hole just waiting for someone to come and poke 
-at it. 
+If an outsider has control over `fabricated_float` then the outsider can cause
+`Vector::set` to write those four bytes to anywhere in memory since the outsider
+will have control over what `v.data` will point to after it has been
+overwritten. This is a security hole just waiting for someone to come and poke
+at it.
 
-In short, the type system is there for a reason. Please don't subvert it by 
-casting one type of pointer into another. 
+In short, the type system is there for a reason. Please don't subvert it by
+casting one type of pointer into another.
 
 But wait, there's more. The `-fstrict-aliasing` version shown first was just a
 snippet. If the compiler can know that the write done by one iteration will have
@@ -316,11 +316,11 @@ trickery to make the loop go faster for large arrays. For example unroll the
 loop and use SSE instructions to set 64 floats per iteration, as shown below.
 Or 128 floats if you have an AVX capable compiler and CPU.
 
-In the below there is talk about aligned floats. In this case I do not mean that 
-the floats' addresses in memory are aligned, but that _the number of floats_ is 
-aligned to some number suitable for efficient SIMD execution. That is, the 
-number of floats not counting any stragglers that will need to be handled in a 
-clean-up loop after the main SIMD loop is done. 
+In the below there is talk about aligned floats. In this case I do not mean that
+the floats' addresses in memory are aligned, but that _the number of floats_ is
+aligned to some number suitable for efficient SIMD execution. That is, the
+number of floats not counting any stragglers that will need to be handled in a
+clean-up loop after the main SIMD loop is done.
 
 With `-fstrict-aliasing`:
 ```c++
@@ -351,7 +351,7 @@ Vector::set(float): # @Vector::set(float)
   jmp .LBB6_10         //      If not, jump to scalar copy loop.
 .LBB6_5:
   leaq -1(%rsi), %rax  // Here is where we get if we had 56 or more aligned floats.
-  subq %rdi, %rax      // Set up a few loop counters. To be honest I'm 
+  subq %rdi, %rax      // Set up a few loop counters. To be honest I'm
   xorl %edi, %edi      // not entirely sure what's going on here.
 .LBB6_6: # =>This Inner Loop Header: Depth=1
   movups %xmm1, (%rcx,%rdi,4)     // A whole bunch of SSE writes to memory.
@@ -582,8 +582,13 @@ blocked_reorder(
 
 In this case the inner loop contains only two memory references per iteration.
 
+Let's do some measurements. The image below graph the runtime for ten random
+reorderings of an increasing number of blocks, with each block containing 30,000
+floats, using a log2-log2 scale.
+
 ![Performance graph](blocked_reorder.svg "Blocked reorder performance graph")
 
+![Performance graph](blocked_reorder_normalized.svg "Blocked reorder performance graph")
 
 
 ## Resources
