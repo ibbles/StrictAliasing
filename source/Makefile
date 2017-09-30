@@ -1,6 +1,6 @@
 .PHONY: all
 
-flags=-std=c++14 -O3 -fno-strict-aliasing -fno-omit-frame-pointer -g
+flags=-std=c++14 -O3 -fstrict-aliasing -fno-omit-frame-pointer -g
 
 all: memcpy.exe naive.exe
 
