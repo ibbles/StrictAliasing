@@ -587,8 +587,10 @@ want the best possible performance that the compiler can give us and don't care
 for assembly readability anymore. Therefore `-O3` is passed to the compiler
 instead of `-Os`.
 
-The image below graph the runtime per block for ten random reorderings of an
-increasing number of blocks, with each block containing 30,000 floats.
+The image below graph the execution time per block for ten random reorderings of
+an increasing number of blocks, with each block containing 30,000 floats. The
+large number of elements per block is to ensure that the overhead per block is
+small in comparison.
 
 ![Performance graph](blocked_reorder.svg "Blocked reorder performance graph")
 
@@ -604,10 +606,11 @@ about how we compile our application.
 Looking at the two loop based versions we see a clear lead for the strict
 aliasing version. It's almost as fast as the `memcpy` version.
 
-A more comparatory view is given in the image below, where the runtime per block
-is given in comparison to the loop-based copy compiled with strict aliasing
-enabled. In this worst-case scenario, passing `-fno-strict-aliasing` to the
-compiler increased the runtime of the application by almost four times.
+A more comparatory view is given in the image below, where the execution time
+per block is given in comparison to the loop-based version compiled with strict
+aliasing enabled. In this worst-case scenario passing `-fno-strict-aliasing` to
+the compiler increased the execution time of the application by almost four
+times for runs with more than a handfull blocks.
 
 ![Performance graph](blocked_reorder_normalized.svg "Blocked reorder performance graph")
 
