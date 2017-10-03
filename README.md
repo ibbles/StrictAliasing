@@ -493,7 +493,7 @@ blocked_reorder(
   addl %r11d, %eax         // Add elem_idx to eax.
   movl (%rdi,%rax,4), %eax // Load src[elem_idx + src_start[block_idx]] into eax.
 
-  // Load an element from dst.
+  // Store the element to dst.
   movl (%rcx,%r10,4), %ebx // Load dst_block_start[block_idx] into ebx.
   addl %r11d, %ebx         // Add elem_idx to ebx.
   movl %eax, (%rsi,%rbx,4) // store eax, the value read from src, to dst[elem_idx + dst_block_start[block_idx]].
@@ -614,6 +614,166 @@ times for runs with more than a handfull blocks.
 
 ![Performance graph](blocked_reorder_normalized.svg "Blocked reorder performance graph")
 
+
+For the curios, the main loops, when compiled with `-O3`, are:
+
+Loop, no-strict:
+```c++
+%rax: Index into src, or element from src.
+%rdx: src_block_starts.
+%rdi: src.
+%rsi: dst.
+%rcx: dst_block_starts.
+%rbx: Index into dst.
+%r10: block_idx.
+%r11d: elem_idx, i.e., offset in current block.
+
+mov    (%rdx,%r10,4),%eax // Load src_block_starts[block_idx].
+add    %r11d,%eax         // Compute offset in src.
+mov    (%rdi,%rax,4),%eax // Load src[%eax].
+mov    (%rcx,%r10,4),%ebx // Load dst_block_starts[block_idx].
+add    %r11d,%ebx         // Compute offset in dst.
+mov    %eax,(%rsi,%rbx,4) // Store loaded element to dst[%ebx].
+inc    %r11d              // ++elem_idx;
+cmp    (%r8,%r10,4),%r11d // elem_idx < block_sizes[block_idx];
+jb     0x400ce0
+```
+
+This is the same as with `-Os`.
+
+Loop, with-strict:
+```c++
+%rdi: src.
+%rsi: dst.
+%r12: src_block_start.
+%r15: dst_block_start.
+%rax: elem_idx.
+%rbp: Element to read or write, or its address.
+
+lea    -0x3(%r12,%rax,1),%ebp // Compute src_start + elem_idx.
+mov    (%rdi,%rbp,4),%ebp     // Load an element from src.
+lea    -0x3(%r15,%rax,1),%ebx // Compute dst_start + elem_idx.
+mov    %ebp,(%rsi,%rbx,4)     // Store the element to dst.
+
+lea    -0x2(%r12,%rax,1),%ebx // Compute src_start + elem_idx.
+mov    (%rdi,%rbx,4),%ebx     // Load an element from src.
+lea    -0x2(%r15,%rax,1),%ebp // Compute dst_start + elem_idx.
+mov    %ebx,(%rsi,%rbp,4)     // Store the element to dst.
+
+lea    -0x1(%r12,%rax,1),%ebx // Compute src_start + elem_idx.
+mov    (%rdi,%rbx,4),%ebx     // Load an element from dst.
+lea    -0x1(%r15,%rax,1),%ebp // Compute dst_start + elem_idx.
+mov    %ebx,(%rsi,%rbp,4)     // Store the element to dst.
+
+lea    (%r12,%rax,1),%ebx     // Compute src_start + elem_idx.
+mov    (%rdi,%rbx,4),%ebx     // Load an element from dst.
+lea    (%r15,%rax,1),%ebp     // Compute dst_start + elem_idx.
+mov    %ebx,(%rsi,%rbp,4)     // Store the element to dst.
+
+lea    0x1(%r14,%rax,1),%rbx  // Compute block_idx.
+add    $0x4,%rax              // elem_idx += 4;
+cmp    %r11,%rbx              // elem_idx < block_size.
+jb     0x400d40
+```
+
+With strict aliasing the compiler is allowed to unroll the loop, but not use
+vector instructions. We may cache the block meta-data in registers, but not the
+block data itself. That is because `src` and `dst` are both `float*`, so a write
+to `dst` may also be a write to `src`. That's why the write of the preceeding
+floats has to finish before any of the succeeding reads can be done.
+
+
+```c++
+%r10: block_idx.
+%r9:  num_blocks.
+%r8:  Very large number. Block-sizes, I guess.
+r11d: 4-byte value from block-indexed array %r8. Block size, I guess.
+r12d: 4-byte value from block-indexed array %rdx. Block start, I guess.
+r15d: 4-byte value from block-indexed array %rcx. Block start, I guesss.
+r14:  r11d - 1. Block-size-ish.
+r13:  r11. Block-size. AND-ed with 0x3. Align down to 4.
+%rdx: Very large number. Block starts, I guess.
+```
+
+`memcpy`, caller loop:
+```c++
+mov    -0xc(%r14),%eax
+lea    (%rsi,%rax,4),%rdi
+mov    -0xc(%r12),%eax
+lea    (%rdx,%rax,4),%rsi
+mov    -0xc(%r13),%edx
+shl    $0x2,%rdx
+callq  0x400b80 <memcpy@plt>
+mov    -0x8(%r14),%eax
+mov    -0x38(%rbp),%rcx
+lea    (%rcx,%rax,4),%rdi
+mov    -0x8(%r12),%eax
+mov    -0x30(%rbp),%rcx
+lea    (%rcx,%rax,4),%rsi
+mov    -0x8(%r13),%edx
+shl    $0x2,%rdx
+callq  0x400b80 <memcpy@plt>
+mov    -0x4(%r14),%eax
+mov    -0x38(%rbp),%rcx
+lea    (%rcx,%rax,4),%rdi
+mov    -0x4(%r12),%eax
+mov    -0x30(%rbp),%rcx
+lea    (%rcx,%rax,4),%rsi
+mov    -0x4(%r13),%edx
+shl    $0x2,%rdx
+callq  0x400b80 <memcpy@plt>
+mov    (%r14),%eax
+mov    -0x38(%rbp),%rcx
+lea    (%rcx,%rax,4),%rdi
+mov    (%r12),%eax
+mov    -0x30(%rbp),%rcx
+lea    (%rcx,%rax,4),%rsi
+mov    0x0(%r13),%edx
+shl    $0x2,%rdx
+callq  0x400b80 <memcpy@plt>
+mov    -0x30(%rbp),%rdx
+mov    -0x38(%rbp),%rsi
+add    $0x10,%r13
+add    $0x10,%r12
+add    $0x10,%r14
+add    $0xfffffffffffffffc,%r15
+jne    0x400e60 <blocked_reorder_memcpy(float*, float*, unsigned int*, unsigned int*, unsigned int*, unsigned int)+176>
+```
+
+`memcpy` itself:
+```c++
+prefetcht0 -0x1c0(%rsi)
+prefetcht0 -0x280(%rsi)
+movdqa -0x10(%rsi),%xmm0
+movdqa -0x20(%rsi),%xmm1
+movdqa -0x30(%rsi),%xmm2
+movdqa -0x40(%rsi),%xmm3
+movdqa -0x50(%rsi),%xmm4
+movdqa -0x60(%rsi),%xmm5
+movdqa -0x70(%rsi),%xmm6
+movdqa -0x80(%rsi),%xmm7
+lea    -0x80(%rsi),%rsi
+sub    $0x80,%rdx
+movdqa %xmm0,-0x10(%rdi)
+movdqa %xmm1,-0x20(%rdi)
+movdqa %xmm2,-0x30(%rdi)
+movdqa %xmm3,-0x40(%rdi)
+movdqa %xmm4,-0x50(%rdi)
+movdqa %xmm5,-0x60(%rdi)
+movdqa %xmm6,-0x70(%rdi)
+movdqa %xmm7,-0x80(%rdi)
+lea    -0x80(%rdi),%rdi
+jae    0x7ffff72bbaf0 <__memcpy_ssse3+1088>
+```
+
+The version using `memcpy` can use both vector instructions and loop unrolling.
+In fact, it unrolled both the byte copying inside `memcpy` and our loop over the
+blocks, making four calls to `memcpy` per iteration. And some memory prefetching
+for good measure.
+
+I'm actually surprised that the elemnt-wise copying loop with strict aliasing
+enabled was so close in runtime performance. That's the benefit of CPU caches
+and store buffers, I guess.
 
 ## Resources
 
