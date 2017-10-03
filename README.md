@@ -618,7 +618,11 @@ times for runs with more than a handfull blocks.
 ## Resources
 
 [C++ standard draft](http://eel.is/c++draft)
+
 [What is the strict aliasing rule?, StackOverflow](https://stackoverflow.com/questions/98650/what-is-the-strict-aliasing-rule)
+
 [Understanding strict aliasing](http://cellperformance.beyond3d.com/articles/2006/06/understanding-strict-aliasing.html)
+
 [Compiler Explorer](https://godbolt.org)
+
 [Understanding C by learning assembly](https://www.recurse.com/blog/7-understanding-c-by-learning-assembly)
