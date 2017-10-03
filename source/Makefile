@@ -24,19 +24,19 @@ naive_strict.exe: blocked_reorder_strict.o naive_main_strict.o Makefile
 
 
 
-memcpy_main_no_strict.o: blocked_reorder_main_no_strict.cpp blocked_reorder_no_strict.hpp Makefile
-	clang++ $(flags) -c $(no_strict)blocked_reorder_main_no_strict.cpp -DMEMCPY -o memcpy_main_no_strict.o
+memcpy_main_no_strict.o: blocked_reorder_main.cpp blocked_reorder.hpp Makefile
+	clang++ $(flags) -c $(no_strict) blocked_reorder_main.cpp -DMEMCPY -o memcpy_main_no_strict.o
 
-memcpy_main_strict.o: blocked_reorder_main_strict.cpp blocked_reorder_strict.hpp Makefile
-	clang++ $(flags) -c $(strict)blocked_reorder_main_strict.cpp -DMEMCPY -o memcpy_main_strict.o
+memcpy_main_strict.o: blocked_reorder_main.cpp blocked_reorder.hpp Makefile
+	clang++ $(flags) -c $(strict) blocked_reorder_main.cpp -DMEMCPY -o memcpy_main_strict.o
 
 
 
 naive_main_no_strict.o: blocked_reorder_main.cpp blocked_reorder.hpp Makefile
-	clang++ $(flags) -c $(no_strict) blocked_reorder_main.cpp -DNAIVE -o naive_main.o
+	clang++ $(flags) -c $(no_strict) blocked_reorder_main.cpp -DNAIVE -o naive_main_no_strict.o
 
 naive_main_strict.o: blocked_reorder_main.cpp blocked_reorder.hpp Makefile
-	clang++ $(flags) -c $(strict) blocked_reorder_main.cpp -DNAIVE -o naive_main.o
+	clang++ $(flags) -c $(strict) blocked_reorder_main.cpp -DNAIVE -o naive_main_strict.o
 
 
 
