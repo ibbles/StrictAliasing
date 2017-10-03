@@ -75,17 +75,48 @@ memcpy_strict.dat: memcpy_strict.exe Makefile
 plot: naive_no_strict.dat naive_strict.dat memcpy_no_strict.dat memcpy_strict.dat Makefile plot_only
 
 plot_only:
-	gnuplot -persist -e "set xlabel 'Number of blocks' ; \
-                         set ylabel 'Time [s]' ; \
-                         set logscale xy 2 ; \
-                         set title 'Blocked reorder' ; \
-                         set key top left ; \
-                         set grid ; \
-                         plot 'naive_no-strict.dat' w p t 'naive no strict', \
-                              'memcpy_no-strict.dat' w p t 'memcpy no strict', \
-                              'naive_strict.dat' w p t 'naive strict', \
-                              'memcpy_strict.dat' w p t 'memcpy strict'\
-                        "
+	octave -q --no-gui --eval "\
+		naive_no_strict = load('naive_no_strict.dat') ;\
+		num_blocks = naive_no_strict(:,1) ;\
+		naive_no_strict = naive_no_strict(:, 2) ;\
+		naive_no_strict = (naive_no_strict ./ num_blocks) .* 1000 ;\
+		naive_strict = load('naive_strict.dat') ;\
+		naive_strict = naive_strict(:, 2) ;\
+		naive_strict = (naive_strict ./ num_blocks) .* 1000 ;\
+		memcpy_no_strict = load('memcpy_no_strict.dat') ;\
+		memcpy_no_strict = memcpy_no_strict(:, 2) ;\
+		memcpy_no_strict = (memcpy_no_strict ./ num_blocks) .* 1000 ;\
+		memcpy_strict = load('memcpy_strict.dat') ;\
+		memcpy_strict = memcpy_strict(:, 2) ;\
+		memcpy_strict = (memcpy_strict ./ num_blocks) .* 1000 ;\
+		all = [num_blocks, naive_no_strict, naive_strict, memcpy_no_strict, memcpy_strict] ;\
+		save('-ascii', 'per_block.dat', 'all') ;\
+	"
+	gnuplot -persist -e "\
+		set key top left ;\
+		set xlabel 'Number of blocks' ;\
+		set ylabel 'Time per block [ms]' ;\
+		set grid ;\
+		set logscale x 2 ;\
+		set yrange [0:] ;\
+		plot \
+			'per_block.dat' u 1:2 w p t 'naive no strict', \
+			'' u 1:3 w p t 'naive strict', \
+			'' u 1:4 w p t 'memcpy no strict', \
+			'' u 1:5 w p t 'memcpy strict' ;\
+	"
+
+	# gnuplot -persist -e "set xlabel 'Number of blocks' ; \
+    #                      set ylabel 'Time [s]' ; \
+    #                      set logscale x 2 ; \
+    #                      set title 'Blocked reorder' ; \
+    #                      set key top left ; \
+    #                      set grid ; \
+    #                      plot 'naive_no-strict.dat' w p t 'naive no strict', \
+    #                           'memcpy_no-strict.dat' w p t 'memcpy no strict', \
+    #                           'naive_strict.dat' w p t 'naive strict', \
+    #                           'memcpy_strict.dat' w p t 'memcpy strict'\
+    #                     "
 
 compare: naive_no_strict.dat naive_strict.dat memcpy_no_strict.dat memcpy_strict.dat Makefile compare_only
 
