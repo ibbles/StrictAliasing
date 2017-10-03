@@ -90,3 +90,21 @@ int main()
         }
     }
 }
+
+
+/*
+The output, if sent to suitable named files, can be plotted in Gnuplot using
+
+gnuplot -persist -e "set xlabel 'Number of blocks' ; \
+                     set ylabel 'Time [s]' ; \
+                     set logscale xy 2 ; \
+                     set title 'Blocked reorder' ; \
+                     set key top left ; \
+                     set grid ; \
+                     plot 'naive_no-strict.dat' w p t 'naive no strict', \
+                          'memcpy_no-strict.dat' w p t 'memcpy no strict', \
+                          'naive_strict.dat' w p t 'naive strict', \
+                          'memcpy_strict.dat' w p t 'memcpy strict'\
+                    "
+
+*/
