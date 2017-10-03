@@ -131,11 +131,11 @@ compare_only:
 		memcpy_no_strict = memcpy_no_strict(:, 2); \
 		memcpy_strict = load('memcpy_strict.dat'); \
 		memcpy_strict = memcpy_strict(:, 2); \
-		best = memcpy_strict; \
-		naive_no_strict = naive_no_strict ./ best; \
-		naive_strict = naive_strict ./ best; \
-		memcpy_no_strict = memcpy_no_strict ./ best; \
-		memcpy_strict = memcpy_strict ./ best; \
+		baseline = naive_strict; \
+		naive_no_strict = naive_no_strict ./ baseline; \
+		naive_strict = naive_strict ./ baseline; \
+		memcpy_no_strict = memcpy_no_strict ./ baseline; \
+		memcpy_strict = memcpy_strict ./ baseline; \
 		all = [num_blocks, naive_no_strict, naive_strict, memcpy_no_strict, memcpy_strict]; \
 		save('-ascii', 'compare.dat', 'all'); \
 		"
