@@ -582,11 +582,32 @@ blocked_reorder(
 
 In this case the inner loop contains only two memory references per iteration.
 
-Let's do some measurements. The image below graph the runtime for ten random
-reorderings of an increasing number of blocks, with each block containing 30,000
-floats, using a log2-log2 scale.
+Enough with the academics, let's do some measurements. For the measurements we
+want the best possible performance that the compiler can give us and don't care
+for assembly readability anymore. Therefore `-O3` is passed to the compiler
+instead of `-Os`.
+
+The image below graph the runtime per block for ten random reorderings of an
+increasing number of blocks, with each block containing 30,000 floats.
 
 ![Performance graph](blocked_reorder.svg "Blocked reorder performance graph")
+
+It is clear that the two `memcpy` versions are the performance winners, and that
+`memcpy` has the same performance regaredless of whether the binary is built
+with strict aliasing or not. I see two possible reasons for the independence on
+strict aliasing in memcpy. One is that `memcpy` operates on raw memory and isn't
+bound by the strict aliasing rules at all. In fact, using `memcpy` is one of the
+correct ways in which we can move bits between objects of different types. The
+second reason is that `memcpy` is part of a compiled library and doesn't care
+about how we compile our application.
+
+Looking at the two loop based versions we see a clear lead for the strict
+aliasing version. It's almost as fast as the `memcpy` version.
+
+A more comparatory view is given in the image below, where the runtime per block
+is given in comparison to the loop-based copy compiled with strict aliasing
+enabled. In this worst-case scenario, passing `-fno-strict-aliasing` to the
+compiler increased the runtime of the application by almost four times.
 
 ![Performance graph](blocked_reorder_normalized.svg "Blocked reorder performance graph")
 
