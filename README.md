@@ -674,16 +674,10 @@ lea    0x1(%r14,%rax,1),%rbx  // Compute block_idx.
 add    $0x4,%rax              // elem_idx += 4;
 cmp    %r11,%rbx              // elem_idx < block_size.
 jb     0x400d40
-```
-
-With strict aliasing the compiler is allowed to unroll the loop, but not use
-vector instructions. We may cache the block meta-data in registers, but not the
-block data itself. That is because `src` and `dst` are both `float*`, so a write
-to `dst` may also be a write to `src`. That's why the write of the preceeding
-floats has to finish before any of the succeeding reads can be done.
 
 
-```c++
+// Register used outside of the innermost loop:
+
 %r10: block_idx.
 %r9:  num_blocks.
 %r8:  Very large number. Block-sizes, I guess.
@@ -693,6 +687,36 @@ r15d: 4-byte value from block-indexed array %rcx. Block start, I guesss.
 r14:  r11d - 1. Block-size-ish.
 r13:  r11. Block-size. AND-ed with 0x3. Align down to 4.
 %rdx: Very large number. Block starts, I guess.
+```
+
+With strict aliasing the compiler is allowed to unroll the loop, but not use
+vector instructions. We may cache the block meta-data in registers, but not the
+block data itself. That is because `src` and `dst` are both `float*`, so a write
+to `dst` may also be a write to `src`. That's why the write of the preceeding
+floats has to finish before any of the succeeding reads can be done. In C the
+`restrict` keyword is used to tell the compiler that two pointers can't alias,
+but we don't have that in C++. Some compilers have extensions that does the same
+thing, such as `__restrict__` or `__declspec(restrict)`.
+
+When marking `src` and `dest` with `__restrict__` Clang produces the following for the inner loop:
+
+```c++
+.LBB9_12: # Parent Loop BB9_2 Depth=1
+  movl %ebp, %r9d
+  movups (%rdi,%r9,4), %xmm0   // Load 8 floats
+  movups 16(%rdi,%r9,4), %xmm1 // at the time.
+  movl %eax, %r9d
+  movups %xmm0, (%rsi,%r9,4)   // Store 8 floats
+  movups %xmm1, 16(%rsi,%r9,4) // at the time.
+  addl $8, %eax    // Step src and dst
+  addl $8, %ebp    // pointers by 8.
+  addq $-8, %rbx   // Decrement num remaning to copy.
+  jne .LBB9_12
+```
+
+
+```c++
+
 ```
 
 `memcpy`, caller loop:
