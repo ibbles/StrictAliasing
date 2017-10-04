@@ -31,6 +31,10 @@ glvalue of other than one of the following types the behavior is undefined:
 And then follows a list of cases that will be detailed in this text. The "stored
 value" part will become important later.
 
+Notice that the text doesn't talk directly about which types of pointers may
+alias each other, but instead which types of pointers may point to a particular
+object. In extension, any pointer that may point to a particular object must be
+assumed to possibly alias any other pointer that may point to the same object.
 
 ## Assembly primer
 
@@ -799,11 +803,116 @@ I'm actually surprised that the elemnt-wise copying loop with strict aliasing
 enabled was so close in runtime performance. That's the benefit of CPU caches
 and store buffers, I guess.
 
+
+## The standard
+
+Let's have a look at the [standard text](http://eel.is/c++draft/basic.lval#8)
+again, this time including the list of types.
+
+> If a program attempts to access the stored value of an object through a
+> glvalue of other than one of the following types the behavior is undefined
+>  - the dynamic type of the object,
+>  - a cv-qualified version of the dynamic type of the object,
+>  - a type similar to the dynamic type of the object,
+>  - a type that is the signed or unsigned type corresponding to the dynamic type of the object,
+>  - a type that is the signed or unsigned type corresponding to a cv-qualified version of the dynamic type of the object,
+>  - an aggregate or union type that includes one of the aforementioned types among its elements or non-static data members (including, recursively, an element or non-static data member of a subaggregate or contained union),
+>  - a type that is a (possibly cv-qualified) base class type of the dynamic type of the object,
+>  - a char, unsigned char, or std​::​byte type.
+
+Each of these require a subsection of its own.
+
+### The dynamic type of the object
+
+The [_dynamic type_](http://eel.is/c++draft/defns.dynamic.type) of an object
+talks about the actual class type of an object in memory, regardless of the type
+of the pointer or reference used to access it. It is the type of that object's
+[most derived class](http://eel.is/c++draft/intro.object#6). It doesn't seem to
+apply to [fundamental types](http://eel.is/c++draft/basic.fundamental).
+
+An example clarifies.
+
+```c++
+class Matrix;
+class SparseMatrix : public Matrix {};
+
+void process(Matrix& m)
+{
+  // The type of `m` is `Matrix`, but as can be seen in `main`, the reference is
+  // to an instance of SparseMatrix. The dynamic type of `m` is therefore
+  // `SparseMatrix`.
+}
+
+void main()
+{
+  SparseMatrix distances;
+  process();
+}
+```
+
+In relation to strict aliasing, the dynamic part of the rule state that the
+compiler must assume that a pointer of type `T*` can point to an object of type
+`T`. Are we just stating the obvious?
+
+Not sure how this relates to pointers and references to base classes. In
+`process` we have a reference of type `Matrix` that references an instance of
+`SparseMatrix`. `Matrix` is not the dynamic type of `m` so this rule is not
+enough to make this reference a valid reference to the object passed.
+
+The fundamental types, which cannot have inheritance, are their own dynamic
+types.
+
+
+### A cv-qualified version of the dynamic type of the objec
+
+[_cv_](http://eel.is/c++draft/basic.type.qualifier) is short for `const
+volatile` and a type being cv-qualified means that either `const`, `volative`,
+both or neither has been added to the type. For example, in
+
+```c++
+void toggle(int& a, const int& b, volatile int& c, const volative int& d);
+```
+
+the compiler must assume that any of these references may alias any other in the
+parameter list.
+
+
+### A type similar to the dynamic type of the object
+
+Not sure. It has to do with [types that are a sequence of pointers or arrays]
+(http://eel.is/c++draft/conv.qual#def:similar_types), such as `const int **`.
+
+
+### A type that is the signed or unsigned type corresponding to the dynamic type of the object,
+
+This means that an `int*` may alias an `unsigned int*`.
+
+
+### A type that is the signed or unsigned type corresponding to a cv-qualified version of the dynamic type of the object
+
+This means that we may mix the cv-rule and the unsigned rule. For example,
+`int*` may alias `const unsigned int*`.
+
+
+### An aggregate or union type that includes one of the aforementioned types among its elements or non-static data members (including, recursively, an element or non-static data member of a subaggregate or contained union)
+
+
+
+
+### What about pointer to base class?
+
+Is that a type of aggregate? Not according to
+https://stackoverflow.com/questions/19846819/why-does-having-a-base-class-disqualify-a-class-from-being-aggregate.
+It is instead a compound type.
+
+The question is, may a `Matrix*` alias an `SparseMatrix*`?
+Or in other words, may a `Matrix*` point to a `SparseMatrix`?
+
 ## Resources
 
 [C++ standard draft](http://eel.is/c++draft)
 
-[What is the strict aliasing rule?, StackOverflow](https://stackoverflow.com/questions/98650/what-is-the-strict-aliasing-rule)
+[What is the strict aliasing rule? StackOverflow](https://stackoverflow.com/questions/98650/what-is-the-strict-aliasing-rule)
 
 [Understanding strict aliasing](http://cellperformance.beyond3d.com/articles/2006/06/understanding-strict-aliasing.html)
 
