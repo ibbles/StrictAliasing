@@ -226,7 +226,7 @@ Clang will return 1065353216, the integer value of the bit pattern for 1.0f, and
 GCC will return whatever integer was at that memory location originally.
 
 
-## Vector set
+### Vector set
 
 This example demonstrates the benefit of enforcing the strict aliasing rule.
 
