@@ -833,7 +833,7 @@ apply to [fundamental types](http://eel.is/c++draft/basic.fundamental).
 An example clarifies.
 
 ```c++
-class Matrix;
+class Matrix {};
 class SparseMatrix : public Matrix {};
 
 void process(Matrix& m)
@@ -846,7 +846,7 @@ void process(Matrix& m)
 void main()
 {
   SparseMatrix distances;
-  process();
+  process(distances);
 }
 ```
 
@@ -854,10 +854,8 @@ In relation to strict aliasing, the dynamic part of the rule state that the
 compiler must assume that a pointer of type `T*` can point to an object of type
 `T`. Are we just stating the obvious?
 
-Not sure how this relates to pointers and references to base classes. In
-`process` we have a reference of type `Matrix` that references an instance of
-`SparseMatrix`. `Matrix` is not the dynamic type of `m` so this rule is not
-enough to make this reference a valid reference to the object passed.
+In the example there is a pointer to `Matrix` that aliases `distances`, which is
+of type `SpaseMatrix`. This is allowed because of a later rule.
 
 The fundamental types, which cannot have inheritance, are their own dynamic
 types.
@@ -896,17 +894,29 @@ This means that we may mix the cv-rule and the unsigned rule. For example,
 
 ### An aggregate or union type that includes one of the aforementioned types among its elements or non-static data members (including, recursively, an element or non-static data member of a subaggregate or contained union)
 
+An [aggregate](http://eel.is/c++draft/dcl.init.aggr) is a POD type containing
+elements of other types. There are two types of aggregates: array and class. The
+elements of the array are, naturally, the array elements. The elements of an
+aggregate class are the direct base classes and the non-static data members.
+
+There are some requirements that a class must fulfill to be an aggregate:
+
+- no user-provided, explicit, or inherited constructors  
+  Meaning that instantiating an aggregate class is done by simply initializing the
+  aggregates elements. No "custom code" may be run.
+- no private or protected non-static data members  
+  Meaning that every element must be visible.
+- no virtual functions  
+  Meaning that the target of any member function call must be known statically.
+  I speculate that the reason for this requirement is that there should be no
+  hidden virtual table pointer in the class instances.
+- no virtual, private, or protected base classes.  
+  Continuing the requirement that all members should be known and visible.
 
 
+### A type that is a (possibly cv-qualified) base class type of the dynamic type of the object
 
-### What about pointer to base class?
-
-Is that a type of aggregate? Not according to
-https://stackoverflow.com/questions/19846819/why-does-having-a-base-class-disqualify-a-class-from-being-aggregate.
-It is instead a compound type.
-
-The question is, may a `Matrix*` alias an `SparseMatrix*`?
-Or in other words, may a `Matrix*` point to a `SparseMatrix`?
+This is what makes the `Matrix`/`SparseMatrix` example work.
 
 ## Resources
 
