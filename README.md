@@ -592,9 +592,9 @@ for assembly readability anymore. Therefore `-O3` is passed to the compiler
 instead of `-Os`.
 
 The image below graph the execution time per block for ten random reorderings of
-an increasing number of blocks, with each block containing 30,000 floats. The
-large number of elements per block is to ensure that the overhead per block is
-small in comparison.
+an increasing number of blocks, with each block containing 30,000 floats (117
+KiB). The large number of elements per block is to ensure that the overhead per
+block is small in comparison.
 
 ![Performance graph](blocked_reorder.svg "Blocked reorder performance graph")
 
@@ -801,7 +801,12 @@ for good measure.
 
 I'm actually surprised that the elemnt-wise copying loop with strict aliasing
 enabled was so close in runtime performance. That's the benefit of CPU caches
-and store buffers, I guess.
+and store buffers, I guess. For large enough block counts we become completely
+memory bandwidth bound.
+
+I may make test with smaller block sizes as well. I believe that thousands of
+blocks each holding 30'000 floats is a bit larger than the typical desktop work
+load.
 
 
 ## The standard
