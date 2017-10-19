@@ -1040,19 +1040,51 @@ the memory pointed to by the two pointers now changes from `float` to
 aliasing rule, but we don't do that. We read through `i`, which is a pointer of
 the correct type.
 
+A more recent bug report of this kind that I could find is [Bug
+29286](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=29286). It talks about using
+placement new instead of malloc'ed memory and assignments to change the type of
+a memory location. Especially interesting is [Comment
+15](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=29286#c15) and a few comments forward.
+
+The comment says that we can change the type of any memory location in this way,
+not just memory allocated on the free store.
+
+```c++
+int32_t i = 0;
+// The type of `i` is now `int32_t` and its value is 0.
+*(float *)&i = 7.0;
+// The type of the memory to which `i` refers is now `float` and its value is 7.0.
+// Reading from `i` is undefined behavior because it breaks the strict aliasing rules
+// since it's and lvalue of type `int32_t` being used to access a memory location
+// holding a `float`.
+//
+// Some say that this case is only valid if `i` is actually part of a union holding
+// both an `int32_t` and a `float`.
+```
+
+We can also do
+
+```c++
+int32_t i = 0;
+float* f = new(&i) float;
+*f = 7.0;
+```
+
+with the same result. There seems to be less controversy for this case.
+Placement new changes the dynamic type of the memory given to it.
 
 ### aligned storage
 
 https://gcc.gnu.org/bugzilla/show_bug.cgi?id=80593
 
 ```c++
-template<unsigned _Len, unsigned _Align>
+template<unsigned size, unsigned alignment>
 struct aligned_storage
 {
   union type
     {
-      unsigned char __data[_Len];
-      struct __attribute__((__aligned__((_Align)))) { } __align;
+      unsigned char __data[size];
+      struct __attribute__((__aligned__((_alignment)))) { } __align;
     };
 };
 
@@ -1139,3 +1171,5 @@ Some say that `p1` and `p2` in `f` may alias, some say it may not.
 [Understanding C by learning assembly](https://www.recurse.com/blog/7-understanding-c-by-learning-assembly)
 
 [Type aliasing on cppreference.com](http://en.cppreference.com/w/cpp/language/reinterpret_cast#Type_aliasing)
+
+[GCC Bug 29286](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=29286)
