@@ -918,10 +918,213 @@ There are some requirements that a class must fulfill to be an aggregate:
 - no virtual, private, or protected base classes.  
   Continuing the requirement that all members should be known and visible.
 
+[cppreference.com](http://en.cppreference.com/w/cpp/language/reinterpret_cast#Type_aliasing)
+say that this rule is a leftover from C and not necessary in C++. In C, aggregate
+copy and assignment access the aggregate object as a whole, but in C++ such
+actions are always performed through a member function call, which accesses the
+individual subobjects rather than the entire object.
+
+An example exemplifies.
+
+```c++
+struct System
+{
+  Matrix L;
+  Matrix D;
+  Matrix U;
+}
+
+void factor(Martix* m, System* s)
+{
+  // This rule say that 'm' and 's' may alias a 'Matrix' object because 'System'
+  // contains a member of type 'Matrix'. If we didn't have this rule
+}
+```
+
 
 ### A type that is a (possibly cv-qualified) base class type of the dynamic type of the object
 
-This is what makes the `Matrix`/`SparseMatrix` example work.
+This is what makes the `Matrix`/`SparseMatrix` example work. There, the dyanmic
+type of the argument to `process` is `SparseMatrix`. `Matrix` is a base class of
+that dynamic type, so we are allowed to reference the `SpaceMatrix` through the
+`Matrix` reference parameter.
+
+[cppreference.com](http://en.cppreference.com/w/cpp/language/reinterpret_cast#Type_aliasing)
+say that this rule is a leftover from C and not necessary in C++. Odd since C
+doesn't have inheritance. It a bit vague on the details.
+
+
+### A char, unsigned char, or std​::​byte type.
+
+We may read and write any type as raw memory, and raw memory in C++ is `char`,
+`unsigned char`, and `std::byte`. Not sure why `signed char`, which is different
+from both `char` and `unsigned char`, isn't listed.
+
+
+## A few examples
+
+### Aliasing subobjects
+
+Some matrix library did something like this. Don't remember exactly, and don't
+remeber which library.
+
+```c++
+class Vector4
+{
+  public:
+  private:
+    float v[4];
+}
+class Matrix4x4
+{
+  public:
+    Vector4& get_column(int c)
+    {
+      return *(Vector4*)&m[c];
+    }
+
+  private:
+    float m[4][4];
+}
+```
+
+
+### Changing type of a memory location
+
+This is from a GCC bug report that I'm unable to find again. I would be grateful
+if it could be found again because this one makes me question everything.
+
+It is very similar to one of the earliest examples in this text. The difference
+is we here order the read and writes so that the read data is the one that was
+last written.
+
+```c++
+uint32_t write_write_read(uint32_t* i, float* f)
+{
+  *f = 1.0f;
+  *i = 1u;
+  return *i;
+} 
+```
+
+Reading the aliasing rules one might come to believe that `i` and `f` cannot
+alias because they point to two unrelated types `uint32_t` and `float`. However,
+the bug report was filed because the compiler had used the non-aliasing
+assumption to reorder the two writes, placing the write through `f` before the
+write through `i`. The ticket report submitter had called `write_write_read`
+with the same pointer passed to both parameters and got unexpected results.
+
+The reason why the aliasing is legal and the reodering illegal is because of the
+`stored value` part of the standard text along with the fact that memory
+returned by `malloc` is untyped. The submitter had done the following:
+
+
+```c++
+void work()
+{
+  void* memory = malloc(4);
+  write_write_read(memory, memory);
+}
+```
+
+What happens is that the memory start out without a type and remain typeless as
+we enter `write_write_read`. After the `*f = 1.0f;` line type type of the
+poited-to memory has become `float`. We have an `uint32_t*` pointer pointing to
+that float which may seem like a violation of the strict aliasing rule, but the
+rule doesn't say that we cannot have aliasing pointers of different types. It
+says that we can't _access the stored value through a glvalue of the wrong
+type_. And we never access the float through the `uint32_t*`. Instead we
+_replace_ the `float` with an `uint32_t` with the `*i = 1u` line. The type of
+the memory pointed to by the two pointers now changes from `float` to
+`uint32_t`. I read through `f` at this point would be a violation of the strict
+aliasing rule, but we don't do that. We read through `i`, which is a pointer of
+the correct type.
+
+
+### aligned storage
+
+https://gcc.gnu.org/bugzilla/show_bug.cgi?id=80593
+
+```c++
+template<unsigned _Len, unsigned _Align>
+struct aligned_storage
+{
+  union type
+    {
+      unsigned char __data[_Len];
+      struct __attribute__((__aligned__((_Align)))) { } __align;
+    };
+};
+
+aligned_storage<sizeof(int), alignof(int)>::type storage;
+
+int main()
+{
+  *reinterpret_cast<int*>(&storage) = 42;
+}
+```
+
+This is allowed. Why?
+
+
+### Misplaced object
+
+https://stackoverflow.com/questions/33845965/reinterpret-cast-to-aggregate-type-in-c
+
+```c++
+struct bar {
+  int a;
+  float b;
+  int c;
+};
+
+int main() {
+  bar s {1,2,3};
+  cout << hex << ((bar*)&s.b)->a << endl;
+}
+```
+
+
+
+
+### Common initial sequence in union
+
+
+
+#include <cassert>
+
+https://gcc.gnu.org/bugzilla/show_bug.cgi?id=65892#c12
+
+```c++
+struct t1 { int m; };
+struct t2 { int m; };
+
+union U {
+    t1 s1;
+    t2 s2;
+};
+
+int f(t1 *p1, t2 *p2)
+{
+    if (p2->m < 0)
+        p1->m = -p1->m;
+
+    return p2->m;
+}
+
+int main (void)
+{
+    union U u = { { -1 } };
+
+    int n = f (&u.s1, &u.s2);
+
+    assert (1 == n);
+
+    return 0;
+}
+```
+
+Some say that `p1` and `p2` in `f` may alias, some say it may not.
 
 ## Resources
 
@@ -934,3 +1137,5 @@ This is what makes the `Matrix`/`SparseMatrix` example work.
 [Compiler Explorer](https://godbolt.org)
 
 [Understanding C by learning assembly](https://www.recurse.com/blog/7-understanding-c-by-learning-assembly)
+
+[Type aliasing on cppreference.com](http://en.cppreference.com/w/cpp/language/reinterpret_cast#Type_aliasing)
