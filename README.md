@@ -965,16 +965,18 @@ from both `char` and `unsigned char`, isn't listed.
 
 ### Aliasing subobjects
 
-Some matrix library did something like this. Don't remember exactly, and don't
-remeber which library.
+Some matrix library did something like this. Don't remember what exactly, and I
+don't remeber which library.
 
 ```c++
 class Vector4
 {
   public:
+    float& operator[](int i);
   private:
     float v[4];
-}
+};
+
 class Matrix4x4
 {
   public:
@@ -985,18 +987,85 @@ class Matrix4x4
 
   private:
     float m[4][4];
+};
+```
+
+When used in the following way, we get two references to unrelated types
+referencing the same bytes in memory so this seems illegal.
+
+```c++
+void strange_multiply(Matrix4x4 const& matrix, Vector4& vector)
+{
+  vector[0] = matrix.get_column(0)[0] * vector[0] +
+              matrix.get_column(1)[0] * vector[1] +
+              matrix.get_column(2)[0] * vector[2] +
+              matrix.get_column(3)[0] * vector[3];
+
+  vector[1] = matrix.get_column(0)[1] * vector[0] +
+              matrix.get_column(1)[1] * vector[1] +
+              matrix.get_column(2)[1] * vector[2] +
+              matrix.get_column(3)[1] * vector[3];
+
+  // And so on.
+}
+
+int main()
+{
+  Matrix4x4 matrix;
+  Vector4& column = matrix.get_column(0);
+  strange_multiply(matrix, column);
 }
 ```
+
+The compiler is allowed to assume that writes to the vector won't change the
+contents of the matrix.
+
+
+### Custom allocators
+
+This example is about custom allocators. Given that we have somehow accuired a
+contigious sequence of bytes, are we allowed to place an object in that memory?
+If so, how do I go about doing that without violating the strict aliasion rules?
+`unsigned char` is special in the sense that we can read and write any object
+through such a pointer, but the inverse it not allowed. I.e., we may not cast a
+pointer-to-char to a pointer-to-T and then use that pointer to acces the memory
+as-if it was a T.
+
+
+[GCC Bug 80593](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=80593)
+
+
+```c++
+template<unsigned size, unsigned alignment>
+struct aligned_storage
+{
+  union type
+  {
+    unsigned char __data[size];
+    struct __attribute__((__aligned__((alignment)))) {} __align;
+  };
+};
+
+aligned_storage<sizeof(int), alignof(int)>::type storage;
+
+int main()
+{
+  *reinterpret_cast<int*>(&storage) = 42;
+}
+```
+
+This is allowed. Why?
+
+Relatedly, in [Strict Aliasing Rules and Placement
+New?](https://stackoverflow.com/questions/37230375/strict-aliasing-rules-and-placement-new)
+on StackOverflow 
 
 
 ### Changing type of a memory location
 
-This is from a GCC bug report that I'm unable to find again. I would be grateful
-if it could be found again because this one makes me question everything.
-
-It is very similar to one of the earliest examples in this text. The difference
-is we here order the read and writes so that the read data is the one that was
-last written.
+This is from a GCC bug report that I'm unable to find again. It is very similar
+to one of the earliest examples in this text. The difference is we here order
+the read and writes so that the read data is the one that was last written.
 
 ```c++
 uint32_t write_write_read(uint32_t* i, float* f)
@@ -1008,8 +1077,8 @@ uint32_t write_write_read(uint32_t* i, float* f)
 ```
 
 Reading the aliasing rules one might come to believe that `i` and `f` cannot
-alias because they point to two unrelated types `uint32_t` and `float`. However,
-the bug report was filed because the compiler had used the non-aliasing
+alias because they point to the two unrelated types `uint32_t` and `float`.
+However, the bug report was filed because the compiler had used the non-aliasing
 assumption to reorder the two writes, placing the write through `f` before the
 write through `i`. The ticket report submitter had called `write_write_read`
 with the same pointer passed to both parameters and got unexpected results.
@@ -1036,15 +1105,16 @@ says that we can't _access the stored value through a glvalue of the wrong
 type_. And we never access the float through the `uint32_t*`. Instead we
 _replace_ the `float` with an `uint32_t` with the `*i = 1u` line. The type of
 the memory pointed to by the two pointers now changes from `float` to
-`uint32_t`. I read through `f` at this point would be a violation of the strict
+`uint32_t`. A read through `f` at this point would be a violation of the strict
 aliasing rule, but we don't do that. We read through `i`, which is a pointer of
 the correct type.
 
-A more recent bug report of this kind that I could find is [Bug
+Another bug report of this kind that I could find is [GCC bug
 29286](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=29286). It talks about using
 placement new instead of malloc'ed memory and assignments to change the type of
 a memory location. Especially interesting is [Comment
-15](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=29286#c15) and a few comments forward.
+15](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=29286#c15) and a few comments
+forward.
 
 The comment says that we can change the type of any memory location in this way,
 not just memory allocated on the free store.
@@ -1055,11 +1125,13 @@ int32_t i = 0;
 *(float *)&i = 7.0;
 // The type of the memory to which `i` refers is now `float` and its value is 7.0.
 // Reading from `i` is undefined behavior because it breaks the strict aliasing rules
-// since it's and lvalue of type `int32_t` being used to access a memory location
+// since it's an lvalue of type `int32_t` being used to access a memory location
 // holding a `float`.
 //
 // Some say that this case is only valid if `i` is actually part of a union holding
 // both an `int32_t` and a `float`.
+//
+// The discussion ended before a clear conclusion was reached.
 ```
 
 We can also do
@@ -1073,30 +1145,7 @@ float* f = new(&i) float;
 with the same result. There seems to be less controversy for this case.
 Placement new changes the dynamic type of the memory given to it.
 
-### aligned storage
 
-https://gcc.gnu.org/bugzilla/show_bug.cgi?id=80593
-
-```c++
-template<unsigned size, unsigned alignment>
-struct aligned_storage
-{
-  union type
-    {
-      unsigned char __data[size];
-      struct __attribute__((__aligned__((_alignment)))) { } __align;
-    };
-};
-
-aligned_storage<sizeof(int), alignof(int)>::type storage;
-
-int main()
-{
-  *reinterpret_cast<int*>(&storage) = 42;
-}
-```
-
-This is allowed. Why?
 
 
 ### Misplaced object
@@ -1158,11 +1207,62 @@ int main (void)
 
 Some say that `p1` and `p2` in `f` may alias, some say it may not.
 
+
+
+### Can `size` be cached?
+
+```c++
+struct Data
+{
+    float* elements;
+    int32_t size;
+};
+
+float mangle(float* ptr); /*
+{
+    return *ptr * *ptr;
+}*/
+
+float sum(Data* data)
+{
+    float result = 0.0f;
+    for (int32_t i = 0; i < data->size; ++i) {
+        result += mangle(&data->elements[i]);
+    }
+    return result;
+}
+
+
+float sum(Data data)
+{
+    float result = 0.0f;
+    for (int32_t i = 0; i < data.size; ++i) {
+        result += mangle(&data.elements[i]);
+    }
+    return result;
+}
+
+
+
+float sum(const Data& data)
+{
+    float result = 0.0f;
+    for (int32_t i = 0; i < data.size; ++i) {
+        result += mangle(&data.elements[i]);
+    }
+    return result;
+}
+```
+
+
+
 ## Resources
 
 [C++ standard draft](http://eel.is/c++draft)
 
 [What is the strict aliasing rule? StackOverflow](https://stackoverflow.com/questions/98650/what-is-the-strict-aliasing-rule)
+
+[Strict Aliasing Rules and Placement New? StackOverflow](https://stackoverflow.com/questions/37230375/strict-aliasing-rules-and-placement-new)
 
 [Understanding strict aliasing](http://cellperformance.beyond3d.com/articles/2006/06/understanding-strict-aliasing.html)
 
@@ -1173,3 +1273,7 @@ Some say that `p1` and `p2` in `f` may alias, some say it may not.
 [Type aliasing on cppreference.com](http://en.cppreference.com/w/cpp/language/reinterpret_cast#Type_aliasing)
 
 [GCC Bug 29286](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=29286)
+
+[GCC Bug 80593](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=80593)
+
+[CppCon 2017: Scott Schurr “Type Punning in C++17: Avoiding Pun-defined Behavior”](https://www.youtube.com/watch?v=sCjZuvtJd-k)
