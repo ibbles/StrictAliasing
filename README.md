@@ -1025,7 +1025,7 @@ contents of the matrix.
 
 This example is about custom allocators. Given that we have somehow accuired a
 contigious sequence of bytes, are we allowed to place an object in that memory?
-If so, how do I go about doing that without violating the strict aliasion rules?
+If so, how do one go about doing so without violating the strict aliasion rules?
 `unsigned char` is special in the sense that we can read and write any object
 through such a pointer, but the inverse it not allowed. I.e., we may not cast a
 pointer-to-char to a pointer-to-T and then use that pointer to acces the memory
@@ -1054,11 +1054,10 @@ int main()
 }
 ```
 
-This is allowed. Why?
-
-Relatedly, in [Strict Aliasing Rules and Placement
-New?](https://stackoverflow.com/questions/37230375/strict-aliasing-rules-and-placement-new)
-on StackOverflow 
+This is allowed. Why? There is a class with the same name in the standard
+library that is used in a similar way. Is `std::aligned_storage` special, or is
+the above listing an equivalent, and equally correct, way to produce a
+"typeless" piece of memory?
 
 
 ### Changing type of a memory location
@@ -1122,6 +1121,7 @@ not just memory allocated on the free store.
 ```c++
 int32_t i = 0;
 // The type of `i` is now `int32_t` and its value is 0.
+
 *(float *)&i = 7.0;
 // The type of the memory to which `i` refers is now `float` and its value is 7.0.
 // Reading from `i` is undefined behavior because it breaks the strict aliasing rules
@@ -1132,6 +1132,9 @@ int32_t i = 0;
 // both an `int32_t` and a `float`.
 //
 // The discussion ended before a clear conclusion was reached.
+//
+// A note is that C does not allow this because `i` has a declared type, and declared
+// types cannot change in C.
 ```
 
 We can also do
@@ -1145,7 +1148,28 @@ float* f = new(&i) float;
 with the same result. There seems to be less controversy for this case.
 Placement new changes the dynamic type of the memory given to it.
 
+In C, it seems to be allowed to change the effective type of _allocated memory_,
+which I assume means memory returned by `malloc` and friends. That is, the
+following is valid C:
 
+```c
+void *memory = malloc(4);
+int32_t *ip = (uint32_t*)memory;
+float *fp = (uint32_t*)memory;
+
+// Here the four bytes have no declared type.
+
+*ip = 1; // The type of the four bytes become 'int32_t`.
+// Reading through 'fp' here would be undefined behavior.
+
+*fp = 1.0f; // The type of the four bytes in changed from 'int32_t' to 'float'
+// Reading through 'ip' here would be undefined behavior.
+```
+
+I do not know if C++ treat memory allocated by `malloc` and friends in the same
+way.
+
+[C99 and type-punning – making sense of a broken language specification](https://davmac.wordpress.com/2010/02/26/c99-revisited/)
 
 
 ### Misplaced object
@@ -1277,3 +1301,5 @@ float sum(const Data& data)
 [GCC Bug 80593](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=80593)
 
 [CppCon 2017: Scott Schurr “Type Punning in C++17: Avoiding Pun-defined Behavior”](https://www.youtube.com/watch?v=sCjZuvtJd-k)
+
+[C99 and type-punning – making sense of a broken language specification](https://davmac.wordpress.com/2010/02/26/c99-revisited/)
