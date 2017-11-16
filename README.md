@@ -20,7 +20,7 @@ otherwise specified.
 Let's start with the basics. The strict aliasing rule state that a program may
 not access a memory location as two different types. For example, if some
 collection of bits in memory hold a floating point value then we may not access
-those bits as an integer. Makes sence, but the question is; what makes two types
+those bits as an integer. Makes sense, but the question is; what makes two types
 different? And there are also exceptions we need to consider.
 
 The wording used by [the standard draft](http://eel.is/c++draft/basic.lval#8) is
@@ -64,7 +64,7 @@ float array_lookup(float* data, uint64_t index) {
 Simpler forms of memory addressing exists as well. If we have a pointer directly
 to the data then we can access it by `(<pointer>)`. An example is `(%rdi)`. If
 we have a pointer to a struct or class and want to access a member variable then
-we can use the `<byte_offset>(<pointer>)` adressing mode. To read the member `f` in
+we can use the `<byte_offset>(<pointer>)` addressing mode. To read the member `f` in
 
 ```c++
 struct Data {
@@ -401,13 +401,12 @@ Vector::set(float): # @Vector::set(float)
 ```
 
 
-
 ### Blocked reorder
 
 Here is a considerably more complicated example where the benefit of the strict
 aliasing rule is demonstrated. The goal of this code is to reorder a set of
 blocks of data, let's say that they are blocks in a sparse blocked matrix,
-according to the permutation given as a set of source-distination indices.
+according to the permutation given as a set of source-destination indices.
 Perhaps we want to optimize the storage for cache locality reasons, or perhaps
 we want to create a block-transposed version of the matrix.
 
@@ -431,7 +430,7 @@ The following statements may help you understand the relationship between the ar
 - A loop over the blocks in `dst_block_starts` / `block_sizes` will visit each block in `dst` exactly once.
 
 The block copying is probably best done using a call to `memcpy`, but let's
-pretend that we're affraid of the performance cost of a function call.
+pretend that we're afraid of the performance cost of a function call.
 
 ```c++
 void blocked_reorder(
@@ -599,7 +598,7 @@ block is small in comparison.
 ![Performance graph](blocked_reorder.svg "Blocked reorder performance graph")
 
 It is clear that the two `memcpy` versions are the performance winners, and that
-`memcpy` has the same performance regaredless of whether the binary is built
+`memcpy` has the same performance regardless of whether the binary is built
 with strict aliasing or not. I see two possible reasons for the independence on
 strict aliasing in memcpy. One is that `memcpy` operates on raw memory and isn't
 bound by the strict aliasing rules at all. In fact, using `memcpy` is one of the
@@ -614,7 +613,7 @@ A more comparatory view is given in the image below, where the execution time
 per block is given in comparison to the loop-based version compiled with strict
 aliasing enabled. In this worst-case scenario passing `-fno-strict-aliasing` to
 the compiler increased the execution time of the application by almost four
-times for runs with more than a handfull blocks.
+times for runs with more than a handful blocks.
 
 ![Performance graph](blocked_reorder_normalized.svg "Blocked reorder performance graph")
 
@@ -687,7 +686,7 @@ jb     0x400d40
 %r8:  Very large number. Block-sizes, I guess.
 r11d: 4-byte value from block-indexed array %r8. Block size, I guess.
 r12d: 4-byte value from block-indexed array %rdx. Block start, I guess.
-r15d: 4-byte value from block-indexed array %rcx. Block start, I guesss.
+r15d: 4-byte value from block-indexed array %rcx. Block start, I guess.
 r14:  r11d - 1. Block-size-ish.
 r13:  r11. Block-size. AND-ed with 0x3. Align down to 4.
 %rdx: Very large number. Block starts, I guess.
@@ -714,7 +713,7 @@ When marking `src` and `dest` with `__restrict__` Clang produces the following f
   movups %xmm1, 16(%rsi,%r9,4) // at the time.
   addl $8, %eax    // Step src and dst
   addl $8, %ebp    // pointers by 8.
-  addq $-8, %rbx   // Decrement num remaning to copy.
+  addq $-8, %rbx   // Decrement num remaining to copy.
   jne .LBB9_12
 ```
 
@@ -799,7 +798,7 @@ In fact, it unrolled both the byte copying inside `memcpy` and our loop over the
 blocks, making four calls to `memcpy` per iteration. And some memory prefetching
 for good measure.
 
-I'm actually surprised that the elemnt-wise copying loop with strict aliasing
+I'm actually surprised that the element-wise copying loop with strict aliasing
 enabled was so close in runtime performance. That's the benefit of CPU caches
 and store buffers, I guess. For large enough block counts we become completely
 memory bandwidth bound.
@@ -869,11 +868,11 @@ types.
 ### A cv-qualified version of the dynamic type of the objec
 
 [_cv_](http://eel.is/c++draft/basic.type.qualifier) is short for `const
-volatile` and a type being cv-qualified means that either `const`, `volative`,
+volatile` and a type being cv-qualified means that either `const`, `volatile`,
 both or neither has been added to the type. For example, in
 
 ```c++
-void toggle(int& a, const int& b, volatile int& c, const volative int& d);
+void toggle(int& a, const int& b, volatile int& c, const volatile int& d);
 ```
 
 the compiler must assume that any of these references may alias any other in the
@@ -934,7 +933,7 @@ struct System
   Matrix U;
 }
 
-void factor(Martix* m, System* s)
+void factor(Matrix* m, System* s)
 {
   // This rule say that 'm' and 's' may alias a 'Matrix' object because 'System'
   // contains a member of type 'Matrix'. If we didn't have this rule
@@ -944,7 +943,7 @@ void factor(Martix* m, System* s)
 
 ### A type that is a (possibly cv-qualified) base class type of the dynamic type of the object
 
-This is what makes the `Matrix`/`SparseMatrix` example work. There, the dyanmic
+This is what makes the `Matrix`/`SparseMatrix` example work. There, the dynamic
 type of the argument to `process` is `SparseMatrix`. `Matrix` is a base class of
 that dynamic type, so we are allowed to reference the `SpaceMatrix` through the
 `Matrix` reference parameter.
@@ -966,7 +965,7 @@ from both `char` and `unsigned char`, isn't listed.
 ### Aliasing subobjects
 
 Some matrix library did something like this. Don't remember what exactly, and I
-don't remeber which library.
+don't remember which library.
 
 ```c++
 class Vector4
@@ -1023,16 +1022,16 @@ contents of the matrix.
 
 ### Custom allocators
 
-This example is about custom allocators. Given that we have somehow accuired a
-contigious sequence of bytes, are we allowed to place an object in that memory?
-If so, how do one go about doing so without violating the strict aliasion rules?
+This example is about custom allocators. Given that we have somehow acquired a
+contiguous sequence of bytes, are we allowed to place an object in that memory?
+If so, how do one go about doing so without violating the strict aliasing rules?
 `unsigned char` is special in the sense that we can read and write any object
 through such a pointer, but the inverse it not allowed. I.e., we may not cast a
-pointer-to-char to a pointer-to-T and then use that pointer to acces the memory
+pointer-to-char to a pointer-to-T and then use that pointer to access the memory
 as-if it was a T.
 
-
-[GCC Bug 80593](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=80593)
+However, [GCC Bug 80593](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=80593)
+contains the following code example:
 
 
 ```c++
@@ -1082,7 +1081,7 @@ assumption to reorder the two writes, placing the write through `f` before the
 write through `i`. The ticket report submitter had called `write_write_read`
 with the same pointer passed to both parameters and got unexpected results.
 
-The reason why the aliasing is legal and the reodering illegal is because of the
+The reason why the aliasing is legal and the reordering illegal is because of the
 `stored value` part of the standard text along with the fact that memory
 returned by `malloc` is untyped. The submitter had done the following:
 
@@ -1097,7 +1096,7 @@ void work()
 
 What happens is that the memory start out without a type and remain typeless as
 we enter `write_write_read`. After the `*f = 1.0f;` line type type of the
-poited-to memory has become `float`. We have an `uint32_t*` pointer pointing to
+pointed-to memory has become `float`. We have an `uint32_t*` pointer pointing to
 that float which may seem like a violation of the strict aliasing rule, but the
 rule doesn't say that we cannot have aliasing pointers of different types. It
 says that we can't _access the stored value through a glvalue of the wrong
@@ -1167,9 +1166,146 @@ float *fp = (uint32_t*)memory;
 ```
 
 I do not know if C++ treat memory allocated by `malloc` and friends in the same
-way.
+way as C, but I would guess so.
 
 [C99 and type-punning – making sense of a broken language specification](https://davmac.wordpress.com/2010/02/26/c99-revisited/)
+
+
+### Copying bytes
+
+Another way to assign a type to a memory location is to copy into it using
+`memcpy`. In this way we can pre-allocate a buffer and reuse it for various
+purposes throughout the application lifetime.
+
+Consider the following example, which creates a scratch pad memory area where
+any trivially copyable data can be stored for later processing.
+
+Remember the part at the start of this text where I told you not to subvert the
+type system? Try to avoid doing dangerous stuff like this.
+
+```c++
+/**
+Stack-like container holding arbitrary typed trivially copyable values.
+*/
+template<size_t NUM_BYTES = 1024>
+class ScratchPad
+{
+public:
+  /**
+  Add a value to the top of the stack.
+  It is the caller's responsibility to ensure that there
+  is enough room in the buffer.
+  */
+  template<typename T>
+  void push(T value)
+  {
+    /// \todo Learn how to use std::enable_if.
+    static_assert(std::is_trivially_copyable<T>::value, "Value is not trivially copyable.");
+    assert(m_offset + sizeof(T) <= NUM_BYTES);
+
+    memcpy(m_buffer + m_offset, &value, sizeof(T));
+    m_offset += sizeof(T);
+  }
+
+
+  /**
+  Remove and return the top value from the stack.
+  It is the caller's responsibility to ensure that the next element
+  is of type T.
+  */
+  template<typename T>
+  T pop()
+  {
+    static_assert(std::is_trivially_copyable<T>::value, "Return type is not trivially copyable.");
+    assert(m_offset >= sizeof(T));
+
+    T value;
+    m_offset -= sizeof(T);
+    memcpy(&value, m_buffer + m_offset, sizeof(T));
+    return value;
+  }
+
+private:
+  size_t m_offset = 0;
+  char m_buffer[NUM_BYTES];
+};
+```
+
+Example usage of the `ScratchPad` class:
+
+```c++
+// A helper function that returns positive values the first few
+// times it's called and then zeros.
+int get_next_batch_size();
+
+// A helper function that returns some data as doubles.
+double get_next_value();
+
+// A helper function that takes a double and does something with it.
+void publish(double);
+
+ScratchPad scratch_pad;
+
+void produce()
+{
+  // The consumer is reading the data in the reverse order of how
+  // the produces produces it. This initial zero flags to the
+  // consumer that there is nothing more to read.
+  scratch_pad.push(0);
+
+  int batch_size;
+  while ((batch_size = get_next_batch_size()) > 0)
+  {
+    for (int i = 0; i < batch_size; ++i)
+    {
+      scratch_pad.push(get_next_value());
+    }
+
+    scratch_pad.push(batch_size);
+  }
+}
+
+void consume()
+{
+  // Each popped 'batch_size' tells us how many doubles we may pop.
+  // A batch size of zero means that there is nothing more to read.
+  int batch_size;
+  while ((batch_size = scratch_pad.pop<int>()) > 0)
+  {
+    double sum = 0.0;
+    for (int i = 0; i < batch_size; ++i)
+    {
+      sum += scratch_pad.pop<double>();
+    }
+    publish(sum);
+  }
+}
+```
+
+With each push onto the ScratchPad stack we copy, using `memcpy`, both the bytes
+and type of the given value into the ScratchPad memory. When the value is later
+popped...
+
+This is all pointless. The pushed value is never accessed from inside the
+ScratchPad, so the type of the memory buffer doesn't matter. Ones copied out
+again we copy it into a variable of the correct type, hopefully, so there is no
+type confusion.
+
+
+
+A common way that I've been told to interpret the bits of one type as another
+type is `memcpy`. The following is the classical example.
+
+```c++
+uint32_t get_bits(float f)
+{
+  uint32_t bits;
+  memcpy(&bits, &f, sizeof(f));
+  return bits;
+}
+```
+
+
 
 
 ### Misplaced object
