@@ -2,6 +2,8 @@
 
 Towards an understanding of the strict aliasing rules.
 
+There is some confusion on which rules are for C++ and which are for C.
+
 
 ## Introduction
 
