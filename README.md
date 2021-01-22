@@ -4,6 +4,9 @@ Towards an understanding of the strict aliasing rules.
 
 There is some confusion on which rules are for C++ and which are for C.
 
+You should probably not base your understanding on these notes, there are most
+likely better sources.
+
 
 ## Introduction
 
